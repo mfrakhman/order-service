@@ -22,6 +22,7 @@ func main() {
 	svc := service.NewOrderService(repo, rmq, cfg.ProductAPI)
 	handler := handlers.NewOrderHandler(svc)
 
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.POST("/orders", handler.CreateOrder)
 	r.GET("/orders", handler.GetOrdersByProduct)
