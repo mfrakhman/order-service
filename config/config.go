@@ -18,6 +18,8 @@ type Config struct {
 	RabbitURL         string
 	ProductAPI        string
 	ServicePort       string
+	RedisHost         string
+	RedisPort         string
 }
 
 func getEnv(key, fallback string) string {
@@ -44,10 +46,12 @@ func Load() *Config {
 		DBPass:            getEnv("DB_PASS", "postgres"),
 		DBName:            getEnv("DB_NAME", "product_db"),
 		DBMaxIdleConns:    getEnvInt("POSTGRES_MAX_IDLE_CONNS", 10),
-		DBMaxOpenConns:    getEnvInt("POSTGRES_MAX_OPEN_CONNS", 100),
+		DBMaxOpenConns:    getEnvInt("POSTGRES_MAX_OPEN_CONNS", 1000),
 		DBConnMaxLifetime: time.Duration(getEnvInt("POSTGRES_CONN_MAX_LIFETIME_MINUTES", 30)) * time.Minute,
 		RabbitURL:         getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 		ProductAPI:        getEnv("PRODUCT_API_URL", "http://localhost:3001/products"),
 		ServicePort:       getEnv("PORT", "3002"),
+		RedisHost:         getEnv("REDIS_HOST", "redis"),
+		RedisPort:         getEnv("REDIS_PORT", "6379"),
 	}
 }

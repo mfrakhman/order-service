@@ -17,12 +17,12 @@ type RabbitMQ struct {
 func New(url string) *RabbitMQ {
 	conn, err := amqp.Dial(url)
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to RabbitMQ: %v", err)
+		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
 	}
 
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Fatalf("❌ Failed to open channel: %v", err)
+		log.Fatalf("Failed to open channel: %v", err)
 	}
 
 	err = ch.ExchangeDeclare(
@@ -35,29 +35,83 @@ func New(url string) *RabbitMQ {
 		nil,
 	)
 	if err != nil {
-		log.Fatalf("❌ Failed to declare exchange: %v", err)
+		log.Fatalf("Failed to declare exchange: %v", err)
 	}
 
-	log.Println("✅ RabbitMQ connected and exchange declared")
+	log.Println("RabbitMQ connected and exchange declared")
 	return &RabbitMQ{conn: conn, channel: ch}
 }
 
 func (r *RabbitMQ) Publish(exchange, key string, payload interface{}) error {
 	body, _ := json.Marshal(payload)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	err := r.channel.PublishWithContext(ctx, exchange, key, false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        body,
-	})
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := r.channel.PublishWithContext(ctx, exchange, key, false, false, amqp.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+		})
+		if err != nil {
+			log.Printf("Publish failed: %v", err)
+			return
+		}
+
+		log.Printf("Published event → %s:%s", exchange, key)
+	}()
+
+	return nil
+}
+
+func (r *RabbitMQ) Consume(exchange, queue, key string, handler func(map[string]interface{})) {
+	q, err := r.channel.QueueDeclare(
+		queue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
 	if err != nil {
-		log.Printf("❌ Publish failed: %v", err)
-		return err
+		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	log.Printf("📤 Published event → %s:%s", exchange, key)
-	return nil
+	err = r.channel.QueueBind(
+		q.Name,
+		key,
+		exchange,
+		false,
+		nil,
+	)
+	if err != nil {
+		log.Fatalf("Failed to bind queue: %v", err)
+	}
+
+	msgs, err := r.channel.Consume(
+		q.Name,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		log.Fatalf("Failed to register consumer: %v", err)
+	}
+
+	log.Printf("Listening for %s:%s messages...", exchange, key)
+	go func() {
+		for msg := range msgs {
+			var payload map[string]interface{}
+			if err := json.Unmarshal(msg.Body, &payload); err != nil {
+				log.Printf("Error parsing message: %v", err)
+				continue
+			}
+			handler(payload)
+		}
+	}()
 }
 
 func (r *RabbitMQ) Close() {

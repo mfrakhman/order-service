@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"ordersvc/internal/cache"
 	"ordersvc/internal/models"
 	"ordersvc/internal/rabbitmq"
 	"ordersvc/internal/repository"
@@ -13,21 +14,22 @@ import (
 )
 
 type OrderService struct {
-	repo *repository.OrderRepository
-	rmq  *rabbitmq.RabbitMQ
+	repo       *repository.OrderRepository
+	rmq        *rabbitmq.RabbitMQ
 	productAPI string
+	cache      *cache.RedisCache
 }
 
-func NewOrderService(repo *repository.OrderRepository, rmq *rabbitmq.RabbitMQ, productAPI string) *OrderService {
+func NewOrderService(repo *repository.OrderRepository, rmq *rabbitmq.RabbitMQ, productAPI string, cache *cache.RedisCache) *OrderService {
 	return &OrderService{
-		repo: repo,
-		rmq:  rmq,
+		repo:       repo,
+		rmq:        rmq,
 		productAPI: productAPI,
+		cache:      cache,
 	}
 }
 
 func (s *OrderService) CreateOrder(productId string, quantity int) (*models.Order, error) {
-	// ✅ Fetch product info from Product-Service
 	product, err := s.fetchProduct(productId)
 	if err != nil {
 		return nil, fmt.Errorf("product not found or unavailable: %w", err)
@@ -47,24 +49,41 @@ func (s *OrderService) CreateOrder(productId string, quantity int) (*models.Orde
 	}
 
 	payload := map[string]interface{}{
-		"orderId":   order.ID,
-		"productId": order.ProductID,
-		"quantity":  quantity,
+		"orderId":    order.ID,
+		"productId":  order.ProductID,
+		"quantity":   quantity,
 		"totalPrice": totalPrice,
-		"createdAt": order.CreatedAt,
+		"createdAt":  order.CreatedAt,
 	}
 
 	s.rmq.Publish("order.exchange", "order.created", payload)
-	log.Printf("✅ Order created: %+v", order)
 
 	return order, nil
 }
 
 func (s *OrderService) GetOrdersByProductID(productID string) ([]models.Order, error) {
-	return s.repo.FindByProductID(productID)
+	cacheKey := fmt.Sprintf("orders:%s", productID)
+
+	var orders []models.Order
+	found, err := s.cache.Get(cacheKey, &orders)
+	if err != nil {
+		log.Printf("Redis get error: %v", err)
+	}
+
+	if found {
+		log.Printf("Cache hit for product %s", productID)
+		return orders, nil
+	}
+	log.Printf("Cache miss for product %s, querying DB", productID)
+	orders, err = s.repo.FindByProductID(productID)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.cache.Set(cacheKey, orders, 30*time.Second)
+	return orders, nil
 }
 
-// Fetch product from Product-Service
 func (s *OrderService) fetchProduct(productId string) (*struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`

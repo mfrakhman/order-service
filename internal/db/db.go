@@ -18,24 +18,23 @@ func Init(cfg *config.Config) *gorm.DB {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to DB: %v", err)
+		log.Fatalf("Failed to connect to DB: %v", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("❌ Failed to get underlying DB: %v", err)
+		log.Fatalf("Failed to get underlying DB: %v", err)
 	}
 
-	// Configure connection pool
 	sqlDB.SetMaxIdleConns(cfg.DBMaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.DBMaxOpenConns)
 	sqlDB.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
 
 	if err := db.AutoMigrate(&models.Order{}); err != nil {
-		log.Fatalf("❌ Failed to migrate: %v", err)
+		log.Fatalf("Failed to migrate: %v", err)
 	}
 
-	log.Printf("✅ Connected to PostgreSQL and migrated (Max Open: %d, Max Idle: %d, Lifetime: %v)",
+	log.Printf("Connected to PostgreSQL and migrated (Max Open: %d, Max Idle: %d, Lifetime: %v)",
 		cfg.DBMaxOpenConns, cfg.DBMaxIdleConns, cfg.DBConnMaxLifetime)
 	return db
 }

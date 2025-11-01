@@ -33,17 +33,20 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetOrdersByProduct(c *gin.Context) {
-	productId := c.Query("productId")
-	if productId == "" {
+	productID := c.Query("productId")
+	if productID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "productId is required"})
 		return
 	}
 
-	orders, err := h.svc.GetOrdersByProductID(productId)
+	orders, err := h.svc.GetOrdersByProductID(productID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, orders)
+	c.JSON(http.StatusOK, gin.H{
+		"source": "cache_or_db",
+		"data":   orders,
+	})
 }
