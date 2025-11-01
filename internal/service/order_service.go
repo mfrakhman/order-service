@@ -18,15 +18,26 @@ type OrderService struct {
 	rmq        *rabbitmq.RabbitMQ
 	productAPI string
 	cache      *cache.RedisCache
+	orderQueue chan *orderQueueItem
+	Quantity   int
+}
+
+type orderQueueItem struct {
+	Order    *models.Order
+	Quantity int
 }
 
 func NewOrderService(repo *repository.OrderRepository, rmq *rabbitmq.RabbitMQ, productAPI string, cache *cache.RedisCache) *OrderService {
-	return &OrderService{
+	svc := &OrderService{
 		repo:       repo,
 		rmq:        rmq,
 		productAPI: productAPI,
 		cache:      cache,
+		orderQueue: make(chan *orderQueueItem, 1000),
 	}
+
+	go svc.startOrderWorker()
+	return svc
 }
 
 func (s *OrderService) CreateOrder(productId string, quantity int) (*models.Order, error) {
@@ -43,22 +54,44 @@ func (s *OrderService) CreateOrder(productId string, quantity int) (*models.Orde
 		CreatedAt:  time.Now(),
 	}
 
-	err = s.repo.Create(order)
-	if err != nil {
-		return nil, err
+	select {
+	case s.orderQueue <- &orderQueueItem{Order: order, Quantity: quantity}:
+		log.Printf("Queued order for async processing: %+v", order)
+	default:
+		log.Println("Order queue full — dropping order!")
 	}
-
-	payload := map[string]interface{}{
-		"orderId":    order.ID,
-		"productId":  order.ProductID,
-		"quantity":   quantity,
-		"totalPrice": totalPrice,
-		"createdAt":  order.CreatedAt,
-	}
-
-	s.rmq.Publish("order.exchange", "order.created", payload)
 
 	return order, nil
+}
+
+func (s *OrderService) startOrderWorker() {
+	log.Println("Order processing worker started...")
+
+	for item := range s.orderQueue {
+		order := item.Order
+		quantity := item.Quantity
+
+		if err := s.repo.Create(order); err != nil {
+			log.Printf("Failed to insert order: %v", err)
+			continue
+		}
+
+		payload := map[string]interface{}{
+			"orderId":    order.ID,
+			"productId":  order.ProductID,
+			"quantity":   quantity, // ✅ now available
+			"totalPrice": order.TotalPrice,
+			"createdAt":  order.CreatedAt,
+		}
+
+		body, _ := json.Marshal(payload)
+		if err := s.rmq.Publish("order.exchange", "order.created", body); err != nil {
+			log.Printf("Failed to publish order event: %v", err)
+			continue
+		}
+
+		log.Printf("Processed order async: %+v", order)
+	}
 }
 
 func (s *OrderService) GetOrdersByProductID(productID string) ([]models.Order, error) {

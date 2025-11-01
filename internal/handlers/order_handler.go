@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"ordersvc/internal/dto"
 	"ordersvc/internal/service"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,7 +28,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, order)
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Order queued successfully",
+		"data":    order,
+	})
 }
 
 func (h *OrderHandler) GetOrdersByProduct(c *gin.Context) {
@@ -46,7 +48,6 @@ func (h *OrderHandler) GetOrdersByProduct(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"source": "cache_or_db",
-		"data":   orders,
+		"data": orders,
 	})
 }
