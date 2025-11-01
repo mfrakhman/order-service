@@ -84,8 +84,7 @@ func (s *OrderService) startOrderWorker() {
 			"createdAt":  order.CreatedAt,
 		}
 
-		body, _ := json.Marshal(payload)
-		if err := s.rmq.Publish("order.exchange", "order.created", body); err != nil {
+		if err := s.rmq.Publish("order.exchange", "order.created", payload); err != nil {
 			log.Printf("Failed to publish order event: %v", err)
 			continue
 		}
